@@ -1,0 +1,32 @@
+order_id,order_date,product,category,qty,unit_price
+1001,2026-09-08,Americano,Drink,2,55
+1002,2026-09-08,Latte,Drink,1,65
+1003,2026-09-08,Croissant,Bakery,3,45
+1004,2026-09-08,Green Tea,Drink,1,60
+1005,2026-09-08,Cheesecake,Bakery,1,120
+1006,2026-09-08,Americano,Drink,1,55
+1007,2026-09-09,Latte,Drink,2,65
+1008,2026-09-09,Croissant,Bakery,1,45
+1009,2026-09-09,Americano,Drink,3,55
+1010,2026-09-09,Cheesecake,Bakery,2,120
+1011,2026-09-09,Green Tea,Drink,2,60
+1012,2026-09-09,Latte,Drink,1,65
+1012,2026-09-09,Latte,Drink,1,65
+1013,2026-09-10,Americano,Drink,4,55
+1014,2026-09-10,Croissant,Bakery,2,45
+1015,2026-09-10,Cheesecake,Bakery,1,120
+1016,2026-09-10,Latte,Drink,3,65
+1017,2026-09-10,Green Tea,Drink,1,60
+1018,2026-09-11,Americano,Drink,2,55
+1019,2026-09-11,Latte,Drink,2,65
+1020,2026-09-11,Croissant,Bakery,4,45
+1021,2026-09-11,Cheesecake,Bakery,3,120
+1022,2026-09-11,Green Tea,Drink,2,60
+1023,2026-09-11,Americano,Drink,1,55
+1024,2026-09-12,Latte,Drink,5,65
+1025,2026-09-12,Americano,Drink,3,55
+1026,2026-09-12,Croissant,Bakery,2,45
+1027,2026-09-12,Cheesecake,Bakery,2,120
+1028,2026-09-12,Green Tea,Drink,3,60
+1029,2026-09-12,Latte,Drink,1,65
+1030,2026-09-12,Americano,Drink,2,55

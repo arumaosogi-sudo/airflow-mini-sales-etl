@@ -1,7 +1,5 @@
 {
-  "_id": {
-    "$oid": "573a1390f29313caabcd42e8"
-  },
+  "_id": "573a1390f29313caabcd42e8",
   "plot": "A group of bandits stage a brazen train hold-up, only to find a determined posse hot on their heels.",
   "genres": [
     "Short",
@@ -20,11 +18,7 @@
   "languages": [
     "English"
   ],
-  "released": {
-    "$date": {
-      "$numberLong": "-2085523200000"
-    }
-  },
+  "released": "1903-12-01 00:00:00",
   "directors": [
     "Edwin S. Porter"
   ],
@@ -58,9 +52,7 @@
       "meter": 100
     },
     "rotten": 0,
-    "lastUpdated": {
-      "$date": "2015-08-08T19:16:10.000Z"
-    }
+    "lastUpdated": "2015-08-08 19:16:10"
   },
   "num_mflix_comments": 0
 }

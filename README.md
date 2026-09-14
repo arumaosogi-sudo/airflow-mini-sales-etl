@@ -1,9 +1,16 @@
-# Mini Sales ETL — CSV (non-SQL) → PostgreSQL → Daily Summary ด้วย Apache Airflow
+# Non-SQL → SQL ด้วย Apache Airflow (Mini ETL)
 
-โปรเจกต์ตัวอย่างขนาดเล็กเพื่อแสดงพื้นฐาน Data Engineering:
-อ่านไฟล์ยอดขาย **CSV** (ข้อมูลที่ไม่ใช่ SQL) → ทำความสะอาดด้วย **pandas** →
-โหลดลง **PostgreSQL** → สรุปยอดรายวันด้วย **SQL** → ตรวจคุณภาพข้อมูล
-โดยทั้งหมดถูกจัดลำดับและตั้งเวลาด้วย **Apache Airflow 3** และรันบน **Docker**
+โปรเจกต์ตัวอย่างขนาดเล็กเพื่อแสดงพื้นฐาน Data Engineering: แปลงข้อมูลที่**ไม่ใช่ SQL**
+ให้กลายเป็นตารางใน **PostgreSQL** โดยใช้ **Apache Airflow 3** จัดลำดับงาน และรันทั้งหมดบน **Docker**
+
+มี 2 pipeline:
+
+| DAG | ต้นทาง (non-SQL) | ปลายทาง (SQL) | จุดที่แสดง |
+|---|---|---|---|
+| `sales_etl` | CSV ยอดขาย | `raw_sales` → `daily_summary` | ELT, pandas clean, SQL aggregate, schedule รายวัน |
+| `movies_json_etl` | **MongoDB document (JSON)** | `movies` + ตารางลูก 5 ตาราง | NoSQL → relational: แบน object ซ้อน, แตก array, แปลง `$oid`/`$date` |
+
+## Pipeline 1: `sales_etl` — CSV → daily summary
 
 ```
 include/data/sales.csv ──extract+clean (pandas)──▶ raw_sales ──transform (SQL)──▶ daily_summary
@@ -32,13 +39,21 @@ include/data/sales.csv ──extract+clean (pandas)──▶ raw_sales ──tra
 ├── requirements-airflow.txt
 ├── .env                           # AIRFLOW_UID ฯลฯ (ไม่มีรหัสลับ)
 ├── dags/
-│   └── sales_etl.py               # DAG หลัก 5 task
+│   ├── sales_etl.py               # DAG 1: CSV -> PostgreSQL (5 task)
+│   ├── movies_json_etl.py         # DAG 2: MongoDB JSON -> PostgreSQL (4 task)
+│   └── movies_lib.py              # ตัวแปลง document -> rows / -> SQL text (ใช้ร่วมกับ scripts/)
+├── scripts/
+│   └── convert_movies.py          # รันเดี่ยวไม่ต้องมี Airflow: JSON -> include/output/movies_insert.sql
 └── include/
-    ├── data/sales.csv             # ข้อมูลต้นทาง (31 แถว มี order ซ้ำ 1 แถวโดยตั้งใจ)
+    ├── data/
+    │   ├── sales.csv              # ต้นทาง DAG 1 (31 แถว มี order ซ้ำ 1 แถวโดยตั้งใจ)
+    │   └── movies/*.json          # ต้นทาง DAG 2 (MongoDB Extended JSON, 1 ไฟล์ = 1 document)
+    ├── output/movies_insert.sql   # ผลลัพธ์ที่ DAG 2 สร้าง: INSERT statements
     └── sql/
         ├── create_tables.sql
         ├── transform_daily_summary.sql
-        └── quality_check.sql
+        ├── quality_check.sql
+        └── create_movie_tables.sql
 ```
 
 ## DAG: `sales_etl`
@@ -70,6 +85,62 @@ amount      NUMERIC(12,2)
 loaded_at   TIMESTAMP
 ```
 
+## Pipeline 2: `movies_json_etl` — MongoDB JSON → PostgreSQL
+
+ต้นทางคือ document จาก MongoDB (`sample_mflix.movies`) ซึ่งเป็น **schemaless / nested / มี array**
+เป้าหมายคือทำให้อยู่ในรูป **relational** ที่ query ด้วย SQL ได้
+
+```
+include/data/movies/*.json ──movies_lib.document_to_rows──▶ movies (1 แถว/หนัง)
+   {                                                       ├─ movie_genres     (1 แถว/genre)
+     "_id": {"$oid": ...},        ── $oid ──▶ TEXT PK       ├─ movie_cast       (เก็บ position = ลำดับใน array)
+     "released": {"$date":        ── ms epoch ──▶ DATE      ├─ movie_directors
+        {"$numberLong": "-2085523200000"}},                 ├─ movie_languages
+     "genres": ["Short","Western"],  ── array ──▶ ตารางลูก  └─ movie_countries
+     "imdb": {"rating": 7.4, ...},   ── object ──▶ imdb_rating, imdb_votes, imdb_id
+     ...
+   }
+```
+
+| # | task_id | ทำอะไร |
+|---|---|---|
+| 1 | `create_movie_tables` | สร้าง `movies` + ตารางลูก 5 ตาราง (FK + `ON DELETE CASCADE`) |
+| 2 | `load_movies` | อ่านทุก `.json` → แปลง → `DELETE` หนังเดิม → `INSERT` ทุกตารางใน transaction เดียว |
+| 3 | `export_sql_file` | เขียน `include/output/movies_insert.sql` (INSERT statements) จาก JSON เดียวกัน |
+| 4 | `quality_check_movies` | มีแถว, `title`/`year` ไม่ null, ทุกหนังมีอย่างน้อย 1 genre และ 1 director |
+
+กฎการแปลง NoSQL → SQL ที่ใช้:
+
+| ใน MongoDB | ใน PostgreSQL | เหตุผล |
+|---|---|---|
+| field ธรรมดา (`title`, `year`) | คอลัมน์ | ตรงตัว |
+| object ซ้อน (`imdb.rating`) | คอลัมน์ `imdb_rating` | ความสัมพันธ์ 1:1 ไม่ต้องแยกตาราง |
+| array (`cast`, `genres`) | ตารางลูก + FK | 1:N — SQL ไม่ควรเก็บ list ในช่องเดียว |
+| `{"$oid": "..."}` | `TEXT` primary key | ObjectId เป็น hex 24 ตัว |
+| `{"$date": {"$numberLong": "-2085523200000"}}` | `DATE` | ms นับจาก 1970 (ติดลบ = ก่อน 1970 → 1903-12-01) |
+| field ที่ไม่มีใน document (เช่น `poster`) | `NULL` | schemaless — ใช้ `.get()` ทุก field |
+
+รันตัวแปลงเดี่ยวๆ โดยไม่ต้องเปิด Airflow (ได้ไฟล์ .sql เหมือนกัน):
+
+```bash
+python scripts/convert_movies.py
+```
+
+ตัวอย่าง query หลังโหลด:
+
+```sql
+SELECT m.title, m.year, m.released, m.imdb_rating,
+       string_agg(DISTINCT g.genre, ', ') AS genres
+FROM movies m JOIN movie_genres g USING (movie_id)
+GROUP BY m.movie_id ORDER BY m.year;
+```
+```
+          title          | year |  released  | imdb_rating |     genres
+-------------------------+------+------------+-------------+----------------
+ The Great Train Robbery | 1903 | 1903-12-01 |         7.4 | Short, Western
+ A Corner in Wheat       | 1909 | 1909-12-13 |         6.6 | Drama, Short
+```
+
 ## วิธีรัน
 
 ต้องมี Docker Desktop (เปิดอยู่) + WSL2
@@ -79,7 +150,7 @@ docker compose up -d --build
 ```
 
 รอ ~1–2 นาที แล้วเปิด <http://localhost:8080> (user `airflow` / pass `airflow`)
-→ เปิดสวิตช์ DAG `sales_etl` → กด ▶ Trigger → ดู Grid/Graph view
+→ เปิดสวิตช์ DAG `sales_etl` และ `movies_json_etl` → กด ▶ Trigger → ดู Grid/Graph view
 
 ดูข้อมูลใน warehouse:
 
@@ -122,4 +193,5 @@ loaded 30 rows into raw_sales
 - การแยกชั้นข้อมูล raw / summary
 - **Data quality check** เป็นส่วนหนึ่งของ pipeline (ไม่ใช่เช็คมือ)
 - **Idempotency** และ retry อัตโนมัติ
+- การแปลง **NoSQL (MongoDB document) → relational schema**: flatten / normalize / type mapping
 - Reproducible environment ด้วย Docker Compose — clone แล้ว `up` ได้เลย
